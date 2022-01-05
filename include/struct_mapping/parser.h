@@ -1,6 +1,8 @@
 #pragma once
 
 #include "exception.h"
+#include "nlohmann/json.hpp"
+using json = nlohmann::json;
 
 #include <istream>
 #include <string>
@@ -14,6 +16,7 @@ template<
 	typename SetIntegral,
 	typename SetString,
 	typename SetNull,
+	typename SetStruct,
 	typename StartStruct,
 	typename EndStruct,
 	typename StartArray,
@@ -30,6 +33,7 @@ public:
 		SetFloatingPoint set_floating_point_,
 		SetString set_string_,
 		SetNull set_null_,
+		SetStruct set_struct_,
 		StartStruct start_struct_,
 		EndStruct end_struct_,
 		StartArray start_array_,
@@ -39,6 +43,7 @@ public:
 		,	set_floating_point(set_floating_point_)
 		,	set_string(set_string_)
 		,	set_null(set_null_)
+		,	set_struct(set_struct_)
 		,	start_struct(start_struct_)
 		,	end_struct(end_struct_)
 		,	start_array(start_array_)
@@ -47,291 +52,150 @@ public:
 
 	void parse(stream_type& data_)
 	{
-		data = &data_;
-
-		wait("{");
-		start_struct("");
-		parse_struct();
+		data = nlohmann::json::parse(data_);
+		if (data.is_object())
+		{
+			if (!set_struct("", data))
+			{
+				start_struct("");
+				parse_struct(data);
+			}
+		}
+		else if (data.is_array())
+		{
+			start_array("");
+			parse_array_value(data);
+		}
 	}
 
 private:
-	stream_type& get_next_char(char& ch)
+
+	void parse_array(json &data)
 	{
-		if (wait_char != '\0')
+		for (auto &[key, value] : data.items())
 		{
-			ch = wait_char;
-			wait_char = '\0';
+			parse_array_value(value);
 		}
-		else
-		{
-			data->get(ch);
-		}
-
-		return *data;
+		end_array();
 	}
 
-	std::string get_string()
-	{
-		std::string result;
-		char next_ch;
-
-		while (data->get(next_ch))
-		{
-			if (next_ch != '\"')
-			{
-				result += next_ch;
-			}
-			else if (next_ch == '\"')
-			{
-				return result;
-			}
-		}
-
-		throw StructMappingException("parser: unexpected end of data");
-	}
-
-	bool is_empty_char(char ch) const
-	{
-		return ch == ' ' || ch == '\t' || ch == '\r';
-	}
-
-	bool is_new_line_char(char ch) const
-	{
-		return ch == '\n';
-	}
-
-	void parse_array()
-	{
-		constexpr const char* EXPECTED_AFTER_START = "]{[\"tf-.0123456789n";
-		constexpr const char* EXPECTED_AFTER_VALUE = "]{[\"tf,-.0123456789n";
-		constexpr const char* EXPECTED_AFTER_COMMA = "{[\"tf-.0123456789n";
-		const char* expected_characters = EXPECTED_AFTER_START;
-
-		for (;;)
-		{
-			const char ch = wait(expected_characters);
-
-			if (ch == ']')
-			{
-				end_array();
-				return;
-			} 
-
-			if (ch == ',')
-			{
-				expected_characters = EXPECTED_AFTER_COMMA;
-			}
-			else
-			{
-				parse_array_value(ch);
-				expected_characters = EXPECTED_AFTER_VALUE;
-			}
-		}
-	}
-
-	void parse_array_value(char start_ch)
+	void parse_array_value(json &value)
 	{
 		std::string name("");
-
-		if (start_ch == '{')
+		switch (value.type())
 		{
-			start_struct(name);
-			parse_struct();
+		case nlohmann::detail::value_t::object:
+		{
+			if (!set_struct(name, value))
+			{
+				start_struct(name);
+				parse_struct(value);
+			}
+			break;
 		}
-		else if (start_ch == '[')
+		case nlohmann::detail::value_t::array:
 		{
 			start_array(name);
-			parse_array();
+			parse_array(value);
+			break;
 		}
-		else if (start_ch == 't')
+		case nlohmann::detail::value_t::string:
 		{
-			wait("r");
-			wait("u");
-			wait("e");
-			set_bool(name, true);
+			set_string(name, value);
+			break;
 		}
-		else if (start_ch == 'f')
+		case nlohmann::detail::value_t::boolean:
 		{
-			wait("a");
-			wait("l");
-			wait("s");
-			wait("e");
-			set_bool(name, false);
+			set_bool(name, value);
+			break;
 		}
-		else if (start_ch == 'n')
+		case nlohmann::detail::value_t::number_integer:
+		case nlohmann::detail::value_t::number_unsigned:
+		case nlohmann::detail::value_t::number_float:
 		{
-			wait("u");
-			wait("l");
-			wait("l");
+			set_number(name, value);
+			break;
+		}
+		case nlohmann::detail::value_t::discarded:
+		case nlohmann::detail::value_t::null:
+		default:
+		{
 			set_null(name);
+			break;
 		}
-		else if (start_ch == '\"')
+		}
+	}
+
+
+	void parse_struct(json &data)
+	{
+		parse_struct_value(data);
+		end_struct();
+	}
+
+	void parse_struct_value(json &data)
+	{
+		for (auto &item : data.items())
 		{
-			set_string(name, get_string());
+			std::string name = item.key();
+			json value = item.value();
+			switch (value.type())
+			{
+			case nlohmann::detail::value_t::object:
+			{
+				if (!set_struct(name, value))
+				{
+					start_struct(name);
+					parse_struct(value);
+				}
+				break;
+			}
+			case nlohmann::detail::value_t::array:
+			{
+				start_array(name);
+				parse_array(value);
+				break;
+			}
+			case nlohmann::detail::value_t::string:
+			{
+				set_string(name, value);
+				break;
+			}
+			case nlohmann::detail::value_t::boolean:
+			{
+				set_bool(name, value);
+				break;
+			}
+			case nlohmann::detail::value_t::binary:
+				break;
+			case nlohmann::detail::value_t::number_integer:
+			case nlohmann::detail::value_t::number_unsigned:
+			case nlohmann::detail::value_t::number_float:
+			{
+				set_number(name, value);
+				break;
+			}
+			case nlohmann::detail::value_t::null:
+			case nlohmann::detail::value_t::discarded:
+			default:
+			{
+				set_null(name);
+				break;
+			}
+			}
+		}
+	}
+
+	void set_number(std::string &name, json &data)
+	{
+		if (data.is_number_float())
+		{
+			set_floating_point(name, data);
 		}
 		else
 		{
-			set_number(name, start_ch);
+			set_integral(name, data);
 		}
-	}
-
-	void parse_struct()
-	{
-		constexpr const char* EXPECTED_AFTER_START = "\"}";
-		constexpr const char* EXPECTED_AFTER_VALUE = ",}";
-		constexpr const char* EXPECTED_AFTER_COMMA = "\"";
-		const char* expected_characters = EXPECTED_AFTER_START;
-
-		for (;;)
-		{
-			const char ch = wait(expected_characters);
-
-			if (ch == '}')
-			{
-				end_struct();
-				return;
-			}
-
-			if (ch == ',')
-			{
-				expected_characters = EXPECTED_AFTER_COMMA;
-			}
-			else
-			{
-				parse_struct_value();
-				expected_characters = EXPECTED_AFTER_VALUE;
-			}
-		}
-	}
-
-	void parse_struct_value()
-	{
-		auto name = get_string();
-
-		wait(":");
-
-		const char value_start_ch = wait("\"{[tf-0123456789n");
-
-		if (value_start_ch == '{')
-		{
-			start_struct(name);
-			parse_struct();
-		}
-		else if (value_start_ch == '[')
-		{
-			start_array(name);
-			parse_array();
-		}
-		else if (value_start_ch == 't')
-		{
-			wait("r");
-			wait("u");
-			wait("e");
-			set_bool(name, true);
-		}
-		else if (value_start_ch == 'f')
-		{
-			wait("a");
-			wait("l");
-			wait("s");
-			wait("e");
-			set_bool(name, false);
-		}
-		else if (value_start_ch == 'n')
-		{
-			wait("u");
-			wait("l");
-			wait("l");
-			set_null(name);
-		}
-		else if (value_start_ch == '\"')
-		{
-			set_string(name, get_string());
-		}
-		else
-		{
-			set_number(name, value_start_ch);
-		}
-	}
-
-	void set_number(std::string& name, char start_ch)
-	{
-		std::string value{start_ch};
-		bool is_floating_point_number = false;
-
-		for (;;)
-		{
-			const auto next_ch = wait("}],.0123456789eE+-");
-
-			if (next_ch == '.')
-			{
-				is_floating_point_number = true;
-			}
-
-			if (next_ch == ',' || next_ch == '}' || next_ch == ']')
-			{
-				wait_char = next_ch;
-				try
-				{
-					if (is_floating_point_number)
-					{
-						set_floating_point(name, std::stod(value));
-					}
-					else
-					{
-						set_integral(name, std::stoll(value));
-					}
-				}
-				catch (std::invalid_argument&)
-				{
-					throw StructMappingException(
-						std::string("parser: bad number [") + value + std::string("] at line ") + std::to_string(line_number));
-				}
-				catch (std::out_of_range&)
-				{
-					throw StructMappingException(
-						std::string("parser: bad number [") + value + std::string("] at line ") + std::to_string(line_number));
-				}
-
-				return;
-			}
-
-			value += next_ch;
-		}
-	}
-
-	char wait(char const* characters_)
-	{
-		char test_ch;
-
-		while (get_next_char(test_ch))
-		{
-			char const* characters = characters_;
-			while (*characters)
-			{
-				if (test_ch == *characters)
-				{
-					return test_ch;
-				}
-
-				++characters;
-			}
- 			
-			if (is_new_line_char(test_ch))
-			{
-				++line_number;
-			}
-			else if (!is_empty_char(test_ch))
-			{
-				throw StructMappingException(
-					std::string("parser: unexpected character '")
-						+ std::string(1, test_ch)
-						+ std::string("' at line ")
-						+ std::to_string(line_number));
-			}
-		}
-
-		throw StructMappingException("parser: unexpected end of data");
 	}
 
 private:
@@ -340,14 +204,12 @@ private:
 	SetFloatingPoint set_floating_point;
 	SetString set_string;
 	SetNull set_null;
+	SetStruct set_struct;
 	StartStruct start_struct;
 	EndStruct end_struct;
 	StartArray start_array;
 	EndArray end_array;
-
-	stream_type* data;
-	size_t line_number = 1;
-	char wait_char = '\0';
+	json data;
 };
 
 } // struct_mapping::detail

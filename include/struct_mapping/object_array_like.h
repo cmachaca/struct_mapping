@@ -55,13 +55,13 @@ public:
 			}
 			else if constexpr (std::is_enum_v<ValueType<T>>)
 			{
-				IterateOver::set<std::string>("", MemberString<ValueType<T>>::to_string()(v));
+				IterateOver::set<json>("", MemberNLJson<ValueType<T>>::to_json(name)(v));
 			}
 			else
 			{
-				if (IsMemberStringExist<ValueType<T>>::value)
+				if (IsMemberNLJsonExist<ValueType<T>>::value)
 				{
-					IterateOver::set<std::string>("", MemberString<ValueType<T>>::to_string()(v));
+					IterateOver::set<json>("", MemberNLJson<ValueType<T>>::to_json(name)(v));
 				}
 				else
 				{
@@ -175,17 +175,17 @@ public:
 		}
 	}
 
-	static void set_integral(T& o, const std::string& name, long long value)
+	static void set_integral(T& o, const std::string& name, const json& value)
 	{
 		if (!used)
 		{
 			if constexpr (detail::is_integer_or_floating_point_v<ValueType<T>>)
 			{
-				if (!detail::in_limits<ValueType<T>>(value))
+				if (!detail::in_limits<ValueType<T>>(value.get<int64_t>()))
 				{
 					throw StructMappingException(
 						"bad value '"
-							+ std::to_string(value)
+							+ std::to_string(value.get<int64_t>())
 							+ "' in array_like at index "
 							+ std::to_string(o.size())
 							+ " is out of limits of type ["
@@ -195,12 +195,11 @@ public:
 							+ "]");
 				}
 
-				insert(o, static_cast<ValueType<T>>(value));
+				insert(o, static_cast<ValueType<T>>(value.get<int64_t>()));
 			}
-			else
+			else if (!set_struct(o, name, value))
 			{
-				throw StructMappingException(
-					"bad type (integer) '" + std::to_string(value) + "' in array_like at index " + std::to_string(o.size()));
+				throw StructMappingException("bad type (integer) '" + std::to_string(value.get<int64_t>()) + "' in array_like at index " + std::to_string(o.size()));
 			}
 		}
 		else
@@ -212,29 +211,17 @@ public:
 		}
 	}
 
-	static void set_string(T& o, const std::string& name, const std::string& value)
+	static void set_string(T& o, const std::string& name, const json& value)
 	{
 		if (!used)
 		{
-			if constexpr (std::is_same_v<ValueType<T>, std::string>)
+			if constexpr (std::is_same_v<ValueType<T>, std::string> || std::is_same_v<ValueType<T>, const char*>)
 			{
 				insert(o, value);
 			}
-			else if constexpr (std::is_enum_v<ValueType<T>>)
+			else if(!set_struct(o, name, value))
 			{
- 				insert(o, MemberString<ValueType<T>>::from_string()(value));
-			}
-			else
-			{
-				if (is_complex_v<ValueType<T>>&& IsMemberStringExist<ValueType<T>>::value)
-				{
-					insert(o, MemberString<ValueType<T>>::from_string()(value));
-				}
-				else
-				{
-					throw StructMappingException(
-						"bad type (string) '" + value + "' in array_like at index " + std::to_string(o.size()));
-				}
+				throw StructMappingException("bad type (string) '" + value.get<std::string>() + "' in array_like at index " + std::to_string(o.size()));
 			}
 		}
 		else
@@ -243,6 +230,28 @@ public:
 			{
 				Object<ValueType<T>>::set_string(get_last_inserted(), name, value);
 			}
+		}
+	}
+
+	static bool set_struct(T& o, const std::string& name, const json& value)
+	{
+		if (!used)
+		{
+			if (is_complex_or_enum_v<ValueType<T>> && IsMemberNLJsonExist<ValueType<T>>::value)
+			{
+				insert(o, MemberNLJson<ValueType<T>>::from_json()(value));
+				return true;
+			}
+			// throw StructMappingException("bad type (struct) '" + value.dump() + "' at name '" + name + "' in struct");
+			return false;
+		}
+		else
+		{
+			if constexpr (is_complex_v<ValueType<T>>)
+			{
+				return Object<ValueType<T>>::set_struct(get_last_inserted(), name, value);
+			}
+			return false;
 		}
 	}
 

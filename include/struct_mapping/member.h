@@ -16,6 +16,11 @@
 namespace struct_mapping::detail
 {
 
+template<typename T>
+struct DefaultValue
+{
+	T value;
+};
 template<
 	typename T,
 	typename ObjectType>
@@ -37,23 +42,25 @@ public:
 		Double,
 		String,
 		Enum,
+		Array,
+		Object,
 		Complex,
 	};
 
 public:
-	template<
+	template <
 		typename V,
-		typename ... U,
-		template<typename> typename ... Options>
-	Member(const std::string& name_, MemberPtr<T, V> ptr_, Options<U>&& ... options)
-		:	name(name_), type(get_member_type<remove_optional_t<V>>())
+		typename... U,
+		template <typename> typename... Options>
+	Member(const std::string &name_, MemberPtr<T, V> ptr_, Options<U> &&...options)
+		: name(name_), type(get_member_type<remove_optional_t<V>>())
 	{
 		is_optional = is_optional_v<V>;
 		ptr_index = static_cast<Index>(ObjectType::template members_ptr<V>.size());
 
 		if constexpr (get_member_type<remove_optional_t<V>>() == Type::Complex)
 		{
-			if (!IsMemberStringExist<remove_optional_t<V>>::value)
+			if (!IsMemberNLJsonExist<remove_optional_t<V>>::value)
 			{
 				deep_index = ObjectType::functions.add(ptr_);
 				(add_option<V>(std::forward<Options<U>>(options)), ...);
@@ -63,30 +70,28 @@ public:
 
 		deep_index = NO_INDEX;
 
-		if (get_member_type<remove_optional_t<V>>() == Type::Enum
-			|| (get_member_type<remove_optional_t<V>>() == Type::Complex
-				&& IsMemberStringExist<remove_optional_t<V>>::value))
+		if (get_member_type<remove_optional_t<V>>() == Type::Enum || (get_member_type<remove_optional_t<V>>() == Type::Complex && IsMemberNLJsonExist<remove_optional_t<V>>::value))
 		{
-			member_string_index = static_cast<Index>(ObjectType::member_string_from_string.size());
+			member_json_index = static_cast<Index>(ObjectType::member_field_from_json.size());
 
-			ObjectType::member_string_from_string.push_back(
-				[ptr_, name_] (T& o, const std::string& value_)
+			ObjectType::member_field_from_json.push_back(
+				[ptr_, name_](T &o, const json &value_)
 				{
-						o.*ptr_ = MemberString<remove_optional_t<V>>::from_string(name_)(value_);
+					o.*ptr_ = MemberNLJson<remove_optional_t<V>>::from_json(name_)(value_);
 				});
 
-			ObjectType::member_string_to_string.push_back(
-				[ptr_, name_] (T& o) -> std::optional<std::string>
+			ObjectType::member_field_to_json.push_back(
+				[ptr_, name_](T &o) -> std::optional<json>
 				{
 					if constexpr (!is_optional_v<V>)
 					{
-						return MemberString<V>::to_string(name_)(o.*ptr_);
+						return MemberNLJson<V>::to_json(name_)(o.*ptr_);
 					}
 					else
 					{
 						if ((o.*ptr_).has_value())
 						{
-							return MemberString<remove_optional_t<V>>::to_string(name_)((o.*ptr_).value());
+							return MemberNLJson<remove_optional_t<V>>::to_json(name_)((o.*ptr_).value());
 						}
 						else
 						{
@@ -114,6 +119,7 @@ public:
 		if constexpr (std::is_same_v<V, float>) {return Type::Float;}
 		if constexpr (std::is_same_v<V, double>) {return Type::Double;}
 		if constexpr (std::is_same_v<V, std::string>) {return Type::String;}
+		if constexpr (std::is_same_v<V, const char*>) {return Type::String;}
 		if constexpr (std::is_enum_v<V>) {return Type::Enum;}
 		
 		return Type::Complex;
@@ -165,9 +171,9 @@ public:
 			iterate_over_impl<std::string, std::string>(o);
 			break;
 		case Type::Enum:
-			if (const auto& value_string = ObjectType::member_string_to_string[member_string_index](o); value_string)
+			if (const auto& value_json = ObjectType::member_field_to_json[member_json_index](o); value_json)
 			{
-				IterateOver::set<std::string>(name, value_string.value());
+				IterateOver::set<json>(name, value_json.value());
 			}
 			else
 			{
@@ -175,11 +181,11 @@ public:
 			}
 			break;
 		case Type::Complex:
-			if (member_string_index != NO_INDEX)
+			if (member_json_index != NO_INDEX)
 			{
-				if (const auto& value_string = ObjectType::member_string_to_string[member_string_index](o); value_string)
+				if (const auto& value_json = ObjectType::member_field_to_json[member_json_index](o); value_json)
 				{
-					IterateOver::set<std::string>(name, value_string.value());
+					IterateOver::set<json>(name, value_json.value());
 				}
 				else
 				{
@@ -208,7 +214,7 @@ public:
 	Index default_index = NO_INDEX;
 	Index deep_index;
 	bool is_optional;
-	Index member_string_index = NO_INDEX;
+	Index member_json_index = NO_INDEX;
 	std::string name;
 	Index ptr_index;
 	bool option_not_empty = false;
@@ -258,12 +264,21 @@ private:
 		typename U>
 	void add_option_default(const Default<U>& op)
 	{
-		if constexpr (std::is_same_v<remove_optional_t<V>, std::string> && std::is_same_v<U, const char*>)
+		if constexpr (
+			(
+				std::is_same_v<remove_optional_t<V>, std::string> ||
+				std::is_same_v<remove_optional_t<V>, const char*>
+			) && 
+			(
+				std::is_same_v<U, const char*> ||
+				std::is_same_v<U, std::string>
+			)
+		)
 		{
 			if constexpr (is_optional_v<V>)
 			{
 				default_index = static_cast<Index>(ObjectType::template members_default<std::optional<std::string>>.size());
-				ObjectType::template members_default<std::optional<std::string>>.push_back(op.get_value());
+				ObjectType::template members_default<std::optional<std::string>>.push_back(std::string(op.get_value()));
 			}
 			else
 			{
@@ -273,24 +288,36 @@ private:
 		}
 		else if constexpr (std::is_enum_v<remove_optional_t<V>>)
 		{
-			default_index = static_cast<Index>(ObjectType::template members_default<std::string>.size());
-			ObjectType::template members_default<std::string>.push_back(
-				MemberString<remove_optional_t<V>>::to_string(name)(op.get_value()));
+			default_index = static_cast<Index>(ObjectType::template members_default<json>.size());
+			ObjectType::template members_default<json>.push_back(MemberNLJson<remove_optional_t<V>>::to_json(name)(op.get_value()));
 		}
-		else if constexpr (std::is_class_v<remove_optional_t<V>>
-			&& (std::is_same_v<U, std::string> || std::is_same_v<U, const char*>))
+		else if constexpr (std::is_class_v<remove_optional_t<V>> && std::is_same_v<U, json>)
 		{
-			if (member_string_index != NO_INDEX)
+			default_index = static_cast<Index>(ObjectType::template members_default<json>.size());
+			ObjectType::template members_default<json>.push_back(op.get_value());
+			if (member_json_index == NO_INDEX)
 			{
-				default_index = static_cast<Index>(ObjectType::template members_default<std::string>.size());
-				ObjectType::template members_default<std::string>.push_back(op.get_value());
+				default_index = static_cast<Index>(ObjectType::template members_default<json>.size());
+				ObjectType::template members_default<json>.push_back(op.get_value());
+				set_default_value = [=](Member<T, ObjectType>* self, T &o)
+				{
+					sm::reg(&DefaultValue<V>::value, "value");
+					DefaultValue<V> default_value_v;
+					std::istringstream json_data((json{{"value", ObjectType::template members_default<json>[self->default_index]}}).dump());
+					struct_mapping::map_json_to_struct(default_value_v, json_data);
+					o.*ObjectType::template members_ptr<V>[self->ptr_index] = default_value_v.value;
+				};
 			}
+
 		}
-		else if constexpr (std::is_same_v<remove_optional_t<V>, U>
-			|| (is_integer_or_floating_point_v<remove_optional_t<V>> && is_integer_or_floating_point_v<U>))
+		else if constexpr (std::is_same_v<remove_optional_t<V>, U> || (is_integer_or_floating_point_v<remove_optional_t<V>> && is_integer_or_floating_point_v<U>))
 		{
 			default_index = static_cast<Index>(ObjectType::template members_default<V>.size());
 			ObjectType::template members_default<V>.push_back(static_cast<remove_optional_t<V>>(op.get_value()));
+			set_default_value = [=](Member<T, ObjectType>* self, T &o)
+			{
+				self->set_default<V>(o);
+			};
 		}
 	}
 
@@ -317,8 +344,7 @@ private:
 		}
 		else
 		{
-			if (const auto& member_value = o.*ObjectType::template members_ptr<std::optional<MemberType>>[ptr_index];
-				member_value)
+			if (const auto& member_value = o.*ObjectType::template members_ptr<std::optional<MemberType>>[ptr_index]; member_value)
 			{
 				IterateOver::set<ValueType>(name, member_value.value());
 			}
@@ -329,40 +355,68 @@ private:
 		}
 	}
 
-	void process_default(T& o)
+	void process_default(T &o)
 	{
 		if (!changed)
 		{
 			switch (type)
 			{
-			case Type::Bool: set_default<bool>(o); break;
-			case Type::Char: set_default<char>(o); break;
-			case Type::UnsignedChar: set_default<unsigned char>(o); break;
-			case Type::Short: set_default<short>(o); break;
-			case Type::UnsignedShort: set_default<unsigned short>(o); break;
-			case Type::Int: set_default<int>(o); break;
-			case Type::UnsignedInt: set_default<unsigned int>(o); break;
-			case Type::Long: set_default<long>(o); break;
-			case Type::LongLong: set_default<long long>(o); break;
-			case Type::Float: set_default<float>(o); break;
-			case Type::Double: set_default<double>(o); break;
-			case Type::String: set_default<std::string>(o); break;
+			case Type::Bool:
+				set_default<bool>(o);
+				break;
+			case Type::Char:
+				set_default<char>(o);
+				break;
+			case Type::UnsignedChar:
+				set_default<unsigned char>(o);
+				break;
+			case Type::Short:
+				set_default<short>(o);
+				break;
+			case Type::UnsignedShort:
+				set_default<unsigned short>(o);
+				break;
+			case Type::Int:
+				set_default<int>(o);
+				break;
+			case Type::UnsignedInt:
+				set_default<unsigned int>(o);
+				break;
+			case Type::Long:
+				set_default<long>(o);
+				break;
+			case Type::LongLong:
+				set_default<long long>(o);
+				break;
+			case Type::Float:
+				set_default<float>(o);
+				break;
+			case Type::Double:
+				set_default<double>(o);
+				break;
+			case Type::String:
+				set_default<std::string>(o);
+				break;
 			case Type::Enum:
 				if (default_index != NO_INDEX)
 				{
-					ObjectType::member_string_from_string[member_string_index](
+					ObjectType::member_field_from_json[member_json_index](
 						o,
-						ObjectType::template members_default<std::string>[default_index]);
+						ObjectType::template members_default<json>[default_index]);
 				}
 				break;
 			case Type::Complex:
+			{
 				if (default_index != NO_INDEX)
 				{
-					if (member_string_index != NO_INDEX)
+					if (set_default_value)
 					{
-						ObjectType::member_string_from_string[member_string_index](
-							o,
-							ObjectType::template members_default<std::string>[default_index]);
+						set_default_value(this, o);
+					}
+					else if (member_json_index != NO_INDEX)
+					{
+
+						ObjectType::member_field_from_json[member_json_index](o, ObjectType::template members_default<json>[default_index]);
 					}
 					else
 					{
@@ -370,6 +424,7 @@ private:
 					}
 				}
 				break;
+			}
 			}
 		}
 	}
@@ -423,6 +478,10 @@ private:
 			}
 		}
 	}
+
+	using SetDefaultValue = void (Member<T, ObjectType>*, T&);
+
+	std::function<SetDefaultValue> set_default_value;
 };
 
 } // struct_mapping::detail

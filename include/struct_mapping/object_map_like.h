@@ -55,13 +55,13 @@ public:
 			}
 			else if constexpr (std::is_enum_v<ValueType<T>>)
 			{
-				IterateOver::set<std::string>(n, MemberString<ValueType<T>>::to_string()(v));
+				IterateOver::set<json>(n, MemberNLJson<ValueType<T>>::to_json(name)(v));
 			}
 			else
 			{
-				if (IsMemberStringExist<ValueType<T>>::value)
+				if (IsMemberNLJsonExist<ValueType<T>>::value)
 				{
-					IterateOver::set<std::string>(n, MemberString<ValueType<T>>::to_string()(v));
+					IterateOver::set<json>(n, MemberNLJson<ValueType<T>>::to_json(name)(v));
 				}
 				else
 				{
@@ -98,19 +98,19 @@ public:
 		used = false;
 	}
 
-	static void set_bool(T& o, const std::string& name, bool value)
+	static void set_bool(T& o, const std::string& name, const json& value)
 	{
 		if (!used)
 		{
 			if constexpr (std::is_same_v<ValueType<T>, bool>)
 			{
-				insert(o, name, value);
+				insert(o, name, value.get<bool>());
 			}
 			else
 			{
 				throw StructMappingException(
 					"bad type (bool) '"
-						+ (value ? std::string("true") : std::string("false"))
+						+ (value.get<bool>() ? std::string("true") : std::string("false"))
 						+ "' at name '"
 						+ name
 						+ "' in map_like");
@@ -162,17 +162,17 @@ public:
 		}
 	}
 
-	static void set_integral(T& o, const std::string& name, long long value)
+	static void set_integral(T& o, const std::string& name, const json& value)
 	{
 		if (!used)
 		{
 			if constexpr (detail::is_integer_or_floating_point_v<ValueType<T>>)
 			{
-				if (!detail::in_limits<ValueType<T>>(value))
+				if (!detail::in_limits<ValueType<T>>(value.get<int64_t>()))
 				{
 					throw StructMappingException(
 						"bad value '"
-							+ std::to_string(value)
+							+ std::to_string(value.get<int64_t>())
 							+ "' at name '"
 							+ name
 							+ "' in map_like is out of limits of type ["
@@ -182,12 +182,11 @@ public:
 							+ "]");
 				}
 
-				insert(o, name, static_cast<ValueType<T>>(value));
+				insert(o, name, static_cast<ValueType<T>>(value.get<int64_t>()));
 			}
 			else
 			{
-				throw StructMappingException(
-					"bad type (integer) '" + std::to_string(value) + "' at name '" + name + "' in map_like");
+				throw StructMappingException("bad type (integer) '" + std::to_string(value.get<int64_t>()) + "' at name '" + name + "' in map_like");
 			}
 		}
 		else
@@ -199,28 +198,17 @@ public:
 		}
 	}
 
-	static void set_string(T& o, const std::string& name, const std::string& value)
+	static void set_string(T& o, const std::string& name, const json& value)
 	{
 		if (!used)
 		{
-			if constexpr (std::is_same_v<ValueType<T>, std::string>)
+			if constexpr (std::is_same_v<ValueType<T>, std::string> || std::is_same_v<ValueType<T>, const char*>)
 			{
 				insert(o, name, value);
 			}
-			else if constexpr (std::is_enum_v<ValueType<T>>)
+			else if (!set_struct(o, name, value))
 			{
- 				insert(o, name, MemberString<ValueType<T>>::from_string()(value));
-			}
-			else
-			{
-				if (is_complex_v<ValueType<T>>&& IsMemberStringExist<ValueType<T>>::value)
-				{
-					insert(o, name, MemberString<ValueType<T>>::from_string()(value));
-				}
-				else
-				{
-					throw StructMappingException("bad type (string) '" + value + "' at name '" + name + "' in map_like");
-				}
+				throw StructMappingException("bad type (string) '" + value.get<std::string>() + "' at name '" + name + "' in map_like");
 			}
 		}
 		else
@@ -229,6 +217,28 @@ public:
 			{
 				Object<ValueType<T>>::set_string(get_last_inserted(), name, value);
 			}
+		}
+	}
+
+	static bool set_struct(T& o, const std::string& name, const json& value)
+	{
+		if (!used)
+		{
+			if (is_complex_or_enum_v<ValueType<T>> && IsMemberNLJsonExist<ValueType<T>>::value)
+			{
+				insert(o, name, MemberNLJson<ValueType<T>>::from_json(name)(value));
+				return true;
+			}
+			// throw StructMappingException("bad type (struct) '" + value.dump() + "' at name '" + name + "' in map_like");
+			return false;
+		}
+		else
+		{
+			if constexpr (is_complex_v<ValueType<T>>)
+			{
+				return Object<ValueType<T>>::set_struct(get_last_inserted(), name, value);
+			}
+			return false;
 		}
 	}
 

@@ -1,62 +1,60 @@
 #pragma once
 
 #include "exception.h"
+#include "nlohmann/json.hpp"
+using json = nlohmann::json;
 
 #include <functional>
 #include <string>
 
 namespace struct_mapping
 {
-
 template<
 	typename T,
 	bool exist = false>
-struct IsMemberStringExist
+struct IsMemberNLJsonExist
 {
 	static inline bool value = exist;
 };
 
 template<typename T>
-class MemberString
+class MemberNLJson
 {
 public:
-	using FromString = T (const std::string&);
-	using ToString = std::string (T);
+	using FromJson = T (const json&);
+	using ToJson = json (T);
 
 public:
 	template<
 		typename From,
 		typename To>
-	static void set(From function_from_string_, To function_to_string_)
+	static void set(From function_from_json_, To function_to_json_)
 	{
-		IsMemberStringExist<T>::value = true;
-		function_from_string = std::function<FromString>(function_from_string_);
-		function_to_string = std::function<ToString>(function_to_string_);
+		IsMemberNLJsonExist<T>::value = true;
+		function_from_json = std::function<FromJson>(function_from_json_);
+		function_to_json = std::function<ToJson>(function_to_json_);
 	}
 
-	static auto& from_string(const std::string& name = "")
+	static auto& from_json(const std::string& name = "")
 	{
-		if (!function_from_string)
+		if (IsMemberNLJsonExist<T>::value)
 		{
-			throw StructMappingException("MemberString not set for member: " + name);
+			return function_from_json;
 		}
-
-		return function_from_string;
+		throw StructMappingException("MemberNLJson not set for member: " + name);
 	}
 
-	static auto& to_string(const std::string& name = "")
+	static auto& to_json(const std::string& name = "")
 	{
-		if (!function_to_string)
+		if (IsMemberNLJsonExist<T>::value)
 		{
-			throw StructMappingException("MemberString not set for member: " + name);
+			return function_to_json;
 		}
-
-		return function_to_string;
+		throw StructMappingException("MemberNLJson not set for member: " + name);
 	}
 
 private:
-	static inline std::function<FromString> function_from_string;
-	static inline std::function<ToString> function_to_string;
+	static inline std::function<FromJson> function_from_json;
+	static inline std::function<ToJson> function_to_json;
 };
-
 } // struct_mapping

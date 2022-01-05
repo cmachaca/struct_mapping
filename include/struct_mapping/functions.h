@@ -1,6 +1,8 @@
 #pragma once
 
 #include "utility.h"
+#include "nlohmann/json.hpp"
+using json = nlohmann::json;
 
 #include <functional>
 #include <string>
@@ -19,11 +21,12 @@ public:
 	using Init = void (T&);
 	using IterateOver = void (T&, const std::string&);
 	using Release = bool (T&);
-	using SetBool = void (T&, const std::string&, bool);
+	using SetBool = void (T&, const std::string&, const json&);
 	using SetDefault = void (T&, Index);
-	using SetFloatingPoint = void (T&, const std::string&, double);
-	using SetIntegral = void (T&, const std::string&, long long);
-	using SetString = void (T&, const std::string&, const std::string&);
+	using SetFloatingPoint = void (T&, const std::string&, const json&);
+	using SetIntegral = void (T&, const std::string&, const json&);
+	using SetString = void (T&, const std::string&, const json&);
+	using SetStruct = bool (T&, const std::string&, const json&);
 	using Use = void (T&, const std::string&);
 
 public:
@@ -55,7 +58,7 @@ public:
 			});
 
 		set_bool.emplace_back(
-			[ptr] (T& o, const std::string& name_, bool value_)
+			[ptr] (T& o, const std::string& name_, const json& value_)
 			{
 				ObjectType<V, is_array_like_v<V>, is_map_like_v<V>>::set_bool(o.*ptr, name_, value_);
 			});
@@ -67,19 +70,19 @@ public:
 			});
 
 		set_floating_point.emplace_back(
-			[ptr] (T& o, const std::string& name_, double value_)
+			[ptr] (T& o, const std::string& name_, const json& value_)
 			{
 				ObjectType<V, is_array_like_v<V>, is_map_like_v<V>>::set_floating_point(o.*ptr, name_, value_);
 			});
 
 		set_integral.emplace_back(
-			[ptr] (T& o, const std::string& name_, long long value_)
+			[ptr] (T& o, const std::string& name_, const json& value_)
 			{
 				ObjectType<V, is_array_like_v<V>, is_map_like_v<V>>::set_integral(o.*ptr, name_, value_);
 			});
 
 		set_string.emplace_back(
-			[ptr] (T& o, const std::string& name_, const std::string& value_)
+			[ptr] (T& o, const std::string& name_, const json& value_)
 			{
 				ObjectType<V, is_array_like_v<V>, is_map_like_v<V>>::set_string(o.*ptr, name_, value_);
 			});
@@ -103,6 +106,7 @@ public:
 	std::vector<std::function<SetFloatingPoint>> set_floating_point;
 	std::vector<std::function<SetIntegral>> set_integral;
 	std::vector<std::function<SetString>> set_string;
+	std::vector<std::function<SetStruct>> set_struct;
 	std::vector<std::function<Use>> use;
 };
 

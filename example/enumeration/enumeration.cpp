@@ -29,6 +29,23 @@ static Color ColorFromString(const std::string& value)
 	return Color::green;
 }
 
+static Color color_from_json(const json & value)
+{
+	if (value.is_string())
+	{
+		return ColorFromString(value.get<std::string>());
+	}
+	else if (value.is_number())
+	{
+		return Color{value.get<int>()};
+	}
+	else if (value.is_object())
+	{
+		return color_from_json(value["name"]);
+	}
+	return Color{0};
+}
+
 static std::string ColorToString(Color color)
 {
 	switch (color)
@@ -37,6 +54,11 @@ static std::string ColorToString(Color color)
 	case Color::green: return "green";
 	default: return "blue";
 	}
+}
+
+static json color_to_json(const Color& color)
+{
+	return ColorToString(color);
 }
 
 struct Palette
@@ -49,7 +71,7 @@ struct Palette
 
 int main()
 {
-	sm::MemberString<Color>::set(ColorFromString, ColorToString);
+	sm::MemberNLJson<Color>::set(color_from_json, color_to_json);
 
 	sm::reg(&Palette::main_color, "main_color", sm::Required{});
 	sm::reg(&Palette::background_color, "background_color", sm::Default{Color::blue});

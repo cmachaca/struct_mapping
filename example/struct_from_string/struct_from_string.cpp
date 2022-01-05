@@ -33,6 +33,23 @@ static Color color_from_string(const std::string & value)
 	return Color{0};
 }
 
+static Color color_from_json(const json & value)
+{
+	if (value.is_string())
+	{
+		return color_from_string(value.get<std::string>());
+	}
+	else if (value.is_number())
+	{
+		return Color{value.get<int>()};
+	}
+	else if (value.is_object())
+	{
+		return color_from_json(value["name"]);
+	}
+	return Color{0};
+}
+
 static std::string color_to_string(const Color& color)
 {
 	switch (color.value)
@@ -41,6 +58,11 @@ static std::string color_to_string(const Color& color)
 	case 2: return "blue";
 	default: return "green";
 	}
+}
+
+static json color_to_json(const Color& color)
+{
+	return color_to_string(color);
 }
 
 struct Background
@@ -55,17 +77,19 @@ struct Palette
 	std::list<Color> special_colors;
 	std::set<Color> old_colors;
 	std::map<std::string, Color> new_colors;
+	std::list<Color> other_colors;
 };
 
 int main()
 {
-	sm::MemberString<Color>::set(color_from_string, color_to_string);
+	sm::MemberNLJson<Color>::set(color_from_json, color_to_json);
 
-	sm::reg(&Palette::main_color, "main_color", sm::Default{"red"});
+	sm::reg(&Palette::main_color, "main_color", sm::Default{Color{45}});
 	sm::reg(&Palette::background, "background", sm::Required{});
 	sm::reg(&Palette::special_colors, "special_colors");
 	sm::reg(&Palette::old_colors, "old_colors");
 	sm::reg(&Palette::new_colors, "new_colors");
+	sm::reg(&Palette::other_colors, "other_colors", sm::Default{R"json(["red", "blue", "green"])json"_json});
 
 	sm::reg(&Background::color, "color");
 
@@ -76,13 +100,13 @@ int main()
 		"background": {
 			"color": "blue"
 		},
-		"special_colors": ["red", "green", "red", "blue"],
-		"old_colors": ["red", "green", "blue"],
 		"new_colors": {
 			"dark": "green",
 			"light": "red",
 			"neutral": "blue"
-		}
+		},
+		"old_colors": ["red", "green", "blue"],
+		"special_colors": ["red", "green", "red", "blue"]
 	}
 	)json");
 

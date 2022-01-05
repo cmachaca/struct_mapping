@@ -23,7 +23,7 @@ inline void map_json_to_struct(T& result_struct, std::basic_istream<char>& json_
 
 	unsigned struct_level = 0;
 
-	auto set_bool = [&] (const std::string& name, bool value)
+	auto set_bool = [&] (const std::string& name, const json& value)
 	{
 		if constexpr (debug)
 		{
@@ -39,7 +39,7 @@ inline void map_json_to_struct(T& result_struct, std::basic_istream<char>& json_
 		detail::Object<T>::set_bool(result_struct, name, value);
 	};
 
-	auto set_integral = [&] (const std::string& name, long long value)
+	auto set_integral = [&] (const std::string& name, const json& value)
 	{
 		if constexpr (debug)
 		{
@@ -49,7 +49,7 @@ inline void map_json_to_struct(T& result_struct, std::basic_istream<char>& json_
 		detail::Object<T>::set_integral(result_struct, name, value);
 	};
 
-	auto set_floating_point = [&] (const std::string& name, double value)
+	auto set_floating_point = [&] (const std::string& name, const json& value)
 	{
 		if constexpr (debug)
 		{
@@ -59,7 +59,7 @@ inline void map_json_to_struct(T& result_struct, std::basic_istream<char>& json_
 		detail::Object<T>::set_floating_point(result_struct, name, value);
 	};
 
-	auto set_string = [&] (const std::string& name, const std::string& value)
+	auto set_string = [&] (const std::string& name, const json& value)
 	{
 		if constexpr (debug)
 		{
@@ -75,6 +75,16 @@ inline void map_json_to_struct(T& result_struct, std::basic_istream<char>& json_
 		{
 			std::cout << "struct_mapping: map_json_to_struct.set_null: " << name << std::endl;
 		}
+	};
+
+	auto set_struct = [&](const std::string &name, const json &value)
+	{
+		if constexpr (debug)
+		{
+			std::cout << "struct_mapping: map_json_to_struct.set_struct: " << name << " : " << value.dump() << std::endl;
+		}
+
+		return detail::Object<T>::set_struct(result_struct, name, value);
 	};
 
 	auto start_struct = [&] (const std::string& name)
@@ -131,6 +141,7 @@ inline void map_json_to_struct(T& result_struct, std::basic_istream<char>& json_
 		set_floating_point,
 		set_string,
 		set_null,
+		set_struct,
 		start_struct,
 		end_struct,
 		start_array,

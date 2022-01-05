@@ -90,6 +90,10 @@ install(DIRECTORY include/struct_mapping
 	DESTINATION "${INCLUDE_INSTALL_DIR}"
 	COMPONENT dev)
 
+install(DIRECTORY include/nlohmann
+	DESTINATION "${INCLUDE_INSTALL_DIR}"
+	COMPONENT dev)
+
 install(DIRECTORY example/
 	DESTINATION "${DOC_INSTALL_DIR}/examples"
 	COMPONENT examples

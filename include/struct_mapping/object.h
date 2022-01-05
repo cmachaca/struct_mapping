@@ -127,7 +127,7 @@ public:
 		}
 	}
 
-	static void set_bool(T& o, const std::string& name, bool value)
+	static void set_bool(T& o, const std::string& name, const json& value)
 	{
 		if constexpr (is_optional_v<T> && std::is_class_v<remove_optional_t<T>>)
 		{
@@ -157,7 +157,7 @@ public:
 				}
 				else
 				{
-					set<bool>(o, value, member_name_index);
+					set<bool>(o, value.get<bool>(), member_name_index);
 				}
 			}
 			else
@@ -210,7 +210,7 @@ public:
 		}
 	}
 
-	static void set_integral(T& o, const std::string& name, long long value)
+	static void set_integral(T& o, const std::string& name, const json& value)
 	{
 		if constexpr (is_optional_v<T> && std::is_class_v<remove_optional_t<T>>)
 		{
@@ -237,34 +237,34 @@ public:
 				switch (members[member_name_index].type)
 				{
 				case MemberType::Type::Char:
-					set<char>(o, value, member_name_index);
+					set<char>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::UnsignedChar:
-					set<unsigned char>(o, value, member_name_index);
+					set<unsigned char>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::Short:
-					set<short>(o, value, member_name_index);
+					set<short>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::UnsignedShort:
-					set<unsigned short>(o, value, member_name_index);
+					set<unsigned short>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::Int:
-					set<int>(o, value, member_name_index);
+					set<int>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::UnsignedInt:
-					set<unsigned int>(o, value, member_name_index);
+					set<unsigned int>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::Long:
-					set<long>(o, value, member_name_index);
+					set<long>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::LongLong:
-					set<long long>(o, value, member_name_index);
+					set<long long>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::Float:
-					set<float>(o, value, member_name_index);
+					set<float>(o, value.get<int64_t>(), member_name_index);
 					break;
 				case MemberType::Type::Double:
-					set<double>(o, value, member_name_index);
+					set<double>(o, value.get<int64_t>(), member_name_index);
 					break;
 				default:
 					throw StructMappingException("bad type (integral) for member: " + name);
@@ -277,7 +277,7 @@ public:
 		}
 	}
 
-	static void set_string(T& o, const std::string& name, const std::string& value)
+	static void set_string(T& o, const std::string& name, const json& value)
 	{
 		if constexpr (is_optional_v<T> && std::is_class_v<remove_optional_t<T>>)
 		{
@@ -301,25 +301,62 @@ public:
 
 				const auto member_name_index = member_name_index_it->second;
 
-				if (members[member_name_index].type == MemberType::Type::Enum
-						|| (members[member_name_index].type == MemberType::Type::Complex
-							&& members[member_name_index].member_string_index != NO_INDEX))
+				if (members[member_name_index].type == MemberType::Type::String)
 				{
-					members[member_name_index].changed = true;
-					member_string_from_string[members[member_name_index].member_string_index](o, value);
+					set<std::string>(o, value.get<std::string>(), member_name_index);
 				}
-				else if (members[member_name_index].type != MemberType::Type::String)
+				else if (!set_struct(o, name, value))
 				{
 					throw StructMappingException("bad type (string) for member: " + name);
-				}
-				else
-				{
-					set<std::string>(o, value, member_name_index);
 				}
 			}
 			else
 			{
 				functions.set_string[member_deep_index](o, name, value);
+			}
+		}
+	}
+
+	static bool set_struct(T& o, const std::string& name, const json& value)
+	{
+		if constexpr (is_optional_v<T> && std::is_class_v<remove_optional_t<T>>)
+		{
+			if (!o.has_value())
+			{
+				o = o.emplace();
+			}
+
+			return Object<remove_optional_t<T>>::set_struct(o.value(), name, value);
+		}
+		else
+		{
+			if (member_deep_index == NO_INDEX)
+			{
+				const auto member_name_index_it = members_name_index.find(name);
+
+				if (member_name_index_it == std::cend(members_name_index))
+				{
+					return false;
+				}
+
+				const auto member_name_index = member_name_index_it->second;
+
+				if (members[member_name_index].type == MemberType::Type::Enum
+						|| (members[member_name_index].type == MemberType::Type::Complex
+							&& members[member_name_index].member_json_index != NO_INDEX))
+				{
+					members[member_name_index].changed = true;
+					member_field_from_json[members[member_name_index].member_json_index](o, value);
+					return true;
+				}
+				else
+				{
+					return false;
+				}
+			}
+			else
+			{
+				return functions.set_struct[member_deep_index](o, name, value);
 			}
 		}
 	}
@@ -432,8 +469,8 @@ private:
 private:
 	static inline FunctionsType functions;
 
-	static inline std::vector<std::function<void(T&, const std::string&)>> member_string_from_string{};
-	static inline std::vector<std::function<std::optional<std::string> (T&)>> member_string_to_string{};
+	static inline std::vector<std::function<void(T&, const json&)>> member_field_from_json{};
+	static inline std::vector<std::function<std::optional<json> (T&)>> member_field_to_json{};
 	static inline Index member_deep_index = NO_INDEX;
 	static inline std::vector<MemberType> members;
 	

@@ -41,13 +41,6 @@ public:
 			!std::is_enum_v<detail::remove_optional_t<M>>
 				|| std::is_enum_v<T>, "bad option (Default): type error, expected enumeration");
 
-		static_assert(
-			detail::is_integral_or_floating_point_or_string_v<detail::remove_optional_t<M>>
-				|| std::is_same_v<detail::remove_optional_t<M>, T>
-				|| (std::is_class_v<detail::remove_optional_t<M>>
-				&& (std::is_same_v<T, std::string> || std::is_same_v<T, const char*>)),
-			"bad option (Default): type error");
-
 		if constexpr (detail::is_integer_or_floating_point_v<detail::remove_optional_t<M>>)
 		{
 			if (!in_limits<detail::remove_optional_t<M>>())
@@ -64,16 +57,20 @@ public:
 			}
 		}
 
-		if constexpr (std::is_class_v<detail::remove_optional_t<M>>
-			&& !std::is_same_v<detail::remove_optional_t<M>, std::string>
-			&& (std::is_same_v<T, std::string> || std::is_same_v<T, const char*>))
+		if constexpr (
+			std::is_class_v<detail::remove_optional_t<M>> && 
+			!std::is_same_v<detail::remove_optional_t<M>, std::string> &&
+			!detail::is_array_like_v<detail::remove_optional_t<M>> &&
+			!detail::is_map_like_v<detail::remove_optional_t<M>> &&
+			std::is_same_v<T, json>
+		)
 		{
-			if (!IsMemberStringExist<detail::remove_optional_t<M>>::value)
+			if (!IsMemberNLJsonExist<detail::remove_optional_t<M>>::value)
 			{
 				throw StructMappingException(
 					"bad option (Default) for '"
 						+ name
-						+ "': function to convert from string value to type is undefined");
+						+ "': function to convert from json value to type is undefined");
 			}
 		}
 	}
